@@ -1,0 +1,177 @@
+---
+title: "Task 1 - Palmetto binary logistic regression"
+author: "Jaxon Stuhr"
+date: "1/28/2022"
+output: html_document
+---
+
+```{r setup, include=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+library(tidyverse)
+library(here)
+library(GGally)
+library(broom)
+library(jtools)
+library(caret)
+library(AICcmodavg)
+library(cowplot)
+library(equatiomatic)
+library(kableExtra)
+library(janitor)
+```
+
+## Overview
+
+This document examines Florida palmetto data from the Archbold Biological Station in south-central Florida. Observations occured between 1981 and 2017. Below, releveant data is visualized and two binary logistic regression models are developed to predict the species of an observed plant based on characteristics found in the data. The model performance is compared, a superioir model is selected, and the results and predictive capacity of this model are displayed. 
+
+## Data Visualization
+
+```{r}
+# read in data
+palmetto_raw = read_csv(here("data", "palmetto.csv"))
+# species: 1 = Serenoa repens, 2 = Sabal etonia to start
+palmetto = palmetto_raw %>%
+  # select applicable variables
+  select(species, height:green_lvs) %>% 
+  # relabel species
+  mutate(species = case_when(
+    species == 1 ~ "Serenoa repens",
+    species == 2 ~ "Sabal etonia"
+  )) %>% 
+  # make species a factor
+  mutate(species = factor(species)) %>% 
+  na.omit()
+# Sabal etonia = 0, serenoa repens = 1
+class(palmetto$species)
+levels(palmetto$species)
+# Sabal and serenoa subsets
+sabal = palmetto %>% 
+  filter(species == "Sabal etonia")  
+serenoa = palmetto %>% 
+  filter(species == "Serenoa repens") 
+```
+
+```{r}
+# Data Viz
+plot1 = ggplot(palmetto, aes(x = species, y = height, color = species)) +
+  geom_jitter() +
+  theme_minimal() + 
+  labs(x = "Species", y = "Height [cm]") +
+  theme(axis.text.x = element_text(angle = 30)) +
+  theme(legend.position="none")
+
+plot2 = ggplot(palmetto, aes(x = species, y = green_lvs, color = species)) +
+  geom_jitter() +
+  theme_minimal() + 
+  labs(x = "Species", y = "Green Leaf Counts") +
+  theme(axis.text.x = element_text(angle = 30)) +
+  theme(legend.position="none")
+
+plot3 = ggplot(palmetto, aes(x = width, y = length, color = species)) +
+  geom_point() +
+  facet_wrap(~species) +
+  theme_minimal() + 
+  labs(x = "Width [cm]", y = "Length [cm]") +
+  theme(axis.text.x = element_text(angle = 30)) +
+  theme(legend.position="none")
+
+# Combine plots in figure
+plot_grid(plot1, plot2, plot3, labels = c('A', 'B', 'C'), label_size = 12)
+```
+
+Figure 1: Exploring the predictive capacity of canopy height (A), width (C), length(C), and number of green leaves (B), on plant species (*Sabal etonia* or *Serenoa repens*) for south-central Florida palmetto data collected between 1981 and 2017
+
+Based on the exploratory plots above, I expect green leaf counts and measured length to have significant predictive capacity, based on the increased leaf counts for *Serenoa repens* (mean count = `r round(mean(serenoa$green_lvs),2)` vs `r round(mean(sabal$green_lvs),2)`) and greater lengths for *Sabal etonia* (mean length = `r round(mean(sabal$length),2)` [cm] vs `r round(mean(serenoa$length),2)` [cm]).  Width and height will likely have less predictive capacity.
+
+## Binary Logistic Regression: Model Comparison and Training
+
+```{r}
+# build functions and models
+f1 <- species ~ height + length + width + green_lvs
+
+regression1 <- glm(formula = f1,
+                    data = palmetto,
+                    family = "binomial")
+
+f2 <- species ~ height + width + green_lvs
+ 
+regression2 <- glm(formula = f2,
+                    data = palmetto,
+                    family = "binomial")
+```
+
+```{r}
+# AICc comparison of models
+AICcmodavg::aictab(list(regression1, regression2))
+```
+
+```{r}
+# 10-fold cross validation of models
+set.seed(57) 
+# tr_ctrl <- trainControl(method = "cv", number = 10)
+tr_ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 10)
+ 
+# Train the model
+model1 <- train(f1, data = palmetto, 
+               method = "glm", family = 'binomial',
+               trControl = tr_ctrl)
+model1
+ 
+model2 <- train(f2, data = palmetto, 
+               method = "glm", family = 'binomial',
+               trControl = tr_ctrl)
+model2
+```
+
+Based on both AIC scores and 10-fold cross validation, Model 1 which predicts species as a function of canopy length, height, weight, and leaf counts, outperformed Model 2, which excluded canopy length. This is not surprising as canopy length was expected to have significant predictive capacity. The final model is expressed below: 
+
+`r equatiomatic::extract_eq(regression1, wrap = TRUE, use_coefs = TRUE)`
+
+The coefficients in this model align with our predictions, showing a strong relationship between leaf count and probability of a *Serenoa repens*, a weaker relationship between canopy length and *Sabal etonia*, and even weaker relationships associated with canopy width and height. A model summary table is displayed below. 
+
+```{r}
+model_tidy = broom::tidy(regression1)
+
+kbl(model_tidy, caption = "Table 1: Model Results Summary") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+## Binary Logistic Regression: Model Performance
+
+```{r}
+# use broom::augment to add predicted species to table
+model_fitted = regression1 %>%
+  broom::augment(type.predict = "response") %>% 
+  # add predicted species column
+  mutate("classification" = case_when(
+    .fitted < .5 ~ "Sabal etonia", 
+    .fitted > .5 ~ "Serenoa repens" 
+  )) %>% 
+  # add correctly classified column
+  mutate("correct_classification" = case_when(
+    species == classification ~ "Yes", 
+    species != classification ~ "No"
+  ))
+```
+
+```{r}
+# build prediction table with counts and percents
+prediction_table = model_fitted %>% 
+  tabyl(species, correct_classification) %>% 
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 2) %>% 
+  adorn_ns()
+
+# display prediction table 
+kable(prediction_table, 
+      col.names = c("Species", "Incorrectly Classified (%, Count)", "Correctly Classified (%, Count)"),
+      caption = "Table 2: Predictive Performance of Binomial Regression Model, Classification Accurace by Species") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+The model performed well, classifying both species correctly with over 90% accuracy. The model predicted the species of 12,267 observed plants, and accurately classified 11,249 based on canopy height, width, length, and leaf counts.
+
+## Data Citation
+
+Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative. https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5
+
