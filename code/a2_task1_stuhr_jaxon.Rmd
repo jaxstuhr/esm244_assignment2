@@ -2,7 +2,9 @@
 title: "Task 1 - Palmetto binary logistic regression"
 author: "Jaxon Stuhr"
 date: "1/28/2022"
-output: html_document
+output: 
+  html_document:
+    code_folding: hide
 ---
 
 ```{r setup, include=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
@@ -42,8 +44,8 @@ palmetto = palmetto_raw %>%
   mutate(species = factor(species)) %>% 
   na.omit()
 # Sabal etonia = 0, serenoa repens = 1
-class(palmetto$species)
-levels(palmetto$species)
+# class(palmetto$species)
+# levels(palmetto$species) 
 # Sabal and serenoa subsets
 sabal = palmetto %>% 
   filter(species == "Sabal etonia")  
@@ -102,7 +104,7 @@ regression2 <- glm(formula = f2,
 
 ```{r}
 # AICc comparison of models
-AICcmodavg::aictab(list(regression1, regression2))
+# AICcmodavg::aictab(list(regression1, regression2))
 ```
 
 ```{r}
@@ -115,12 +117,12 @@ tr_ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 10)
 model1 <- train(f1, data = palmetto, 
                method = "glm", family = 'binomial',
                trControl = tr_ctrl)
-model1
+# model1
  
 model2 <- train(f2, data = palmetto, 
                method = "glm", family = 'binomial',
                trControl = tr_ctrl)
-model2
+# model2
 ```
 
 Based on both AIC scores and 10-fold cross validation, Model 1 which predicts species as a function of canopy length, height, weight, and leaf counts, outperformed Model 2, which excluded canopy length. This is not surprising as canopy length was expected to have significant predictive capacity. The final model is expressed below: 
