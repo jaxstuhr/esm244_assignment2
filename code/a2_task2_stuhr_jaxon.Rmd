@@ -15,7 +15,12 @@ library(Metrics)
 library(cowplot)
 library(here)
 library(broom)
+library(kableExtra)
 ```
+
+Background:
+
+This document wrangles and analyzes data on lizard populations in New Mexico. The data was collected by the Jornada Basin LTER site between 1989 and 2006. In this analysis, the data is fit to a non-linear exponential function predicting LIzard weight as a function of snout-to-vent length. The models parameters are optimized using non-linear least squares methods. This was done for all lizards in teh data set, as well as the subset including only male whiptails. 
 
 ```{r}
 # read in lizard data
@@ -25,6 +30,11 @@ lizards = lizards_raw %>%
   mutate(
     log_weight = log(weight),
     log_length = log(SV_length)
+  ) %>% 
+  mutate(sex = case_when(
+    sex == "F" ~ "Female", 
+    sex == "M" ~ "Male"
+  )
   )
 ```
 
@@ -45,26 +55,89 @@ guess_model = lm(log_weight ~ log_length, data = lizards)
 a_guess = exp(coefficients(guess_model)[1])
 b_guess = coefficients(guess_model)[2]
 # build NLS model
-lizards_nls_1 = nls(weight ~ lizard_model(a, b, SV_length ),
+lizards_general_nls = nls(weight ~ lizard_model(a, b, SV_length ),
                   data=lizards,
                   start=list(a = a_guess, b = b_guess), 
                   trace=TRUE)
+# display model in table
+lizards_general_tidy = tidy(lizards_general_nls)
+kable(lizards_general_tidy, caption = "Table 1: NLS General Model Results Summary", col.names = c("Parameter", "Estimate", "Standard Error", "Statistic", "P Value")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
 ```
 
 
 ```{r}
-# add column to lizards with modeled weights based on guessed parameters
+# add column to lizards with modeled weights based on NLS parameters
+a_general = lizards_general_tidy$estimate[1]
+b_general = lizards_general_tidy$estimate[2]
 lizards = lizards %>% 
-  mutate(guess_weights = lizard_model(a,b,SV_length))
+  mutate(general_model_weights = lizard_model(a_general,b_general,SV_length))
 ```
 
 ```{r}
-# Data Viz
-ggplot(lizards, aes(x = SV_length, y = weight, color = sex)) + 
-  geom_point() + 
-  labs(x = "Snout to Vent Length [mm]", y = "Weight [g]") + 
+# Data Viz of general NLS
+ggplot() + 
+  geom_point(data = lizards, aes(x = SV_length, y = weight, color = sex)) + 
+  labs(x = "Snout to Vent Length [mm]", y = "Weight [g]", color = "Legend") + 
   theme_minimal() +
-  geom_smooth(data = lizards, aes(x = SV_length, y = guess_weights))
+  geom_line(data = lizards, size = 1.2, aes(x = SV_length, y = general_model_weights, color = "NLS Fit")) +
+  geom_text(aes(x = 92, y = 50, label = "Weight = .00034 * Length ^ 2.45"))
 ```
 
-Figure 1: Data visualization of lizard length vs. weight sorted by sex
+Figure 1: Data visualization of lizard length vs. weight sorted by sex with superimposed NLS Fit line
+
+```{r}
+# filter out male whiptails
+male_whips = lizards %>% 
+  filter(spp == "CNTI", sex == "Male")
+```
+
+```{r}
+# Build NLS model by guessing parameters by fitting data to a log-log model (male whiptails only)
+# ln(weight) = ln(a) + b * ln(length) 
+mw_guess_model = lm(log_weight ~ log_length, data = male_whips)
+# define parameter guesses
+mw_a_guess = exp(coefficients(guess_model)[1])
+mw_b_guess = coefficients(guess_model)[2]
+# build NLS model
+male_whips_nls = nls(weight ~ lizard_model(a, b, SV_length),
+                  data=male_whips,
+                  start=list(a = a_guess, b = b_guess), 
+                  trace=TRUE)
+# display model in table
+male_whips_general_tidy = tidy(male_whips_nls)
+kable(male_whips_general_tidy, caption = "Table 2: NLS Male Whiptails Model Results Summary", col.names = c("Parameter", "Estimate", "Standard Error", "Statistic", "P Value")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+```{r}
+# add column to male whips with modeled weights based on mw NLS parameters
+a_mw = male_whips_general_tidy$estimate[1]
+b_mw = male_whips_general_tidy$estimate[2]
+male_whips = male_whips %>% 
+  mutate(mw_model_weights = lizard_model(a_mw,b_mw,SV_length)) %>% 
+  mutate(general_rmse = map2_dbl(general_model_weights, weight, ~rmse(.x, .y))) %>% 
+  mutate(mw_rmse = map2_dbl(mw_model_weights, weight, ~rmse(.x, .y)))
+```
+
+```{r}
+# Data Viz of male whips and general NLS
+ggplot() + 
+  geom_point(data = male_whips, aes(x = SV_length, y = weight, color = "Male Whiptail Observations")) + 
+  labs(x = "Snout to Vent Length (L) [mm]", y = "Weight (W) [g]") + 
+  theme_minimal() +
+  geom_line(data = male_whips, size = 1.2, aes(x = SV_length, 
+                                               y = general_model_weights, 
+                                               color = "General NLS Fit (W = .00034 L ^ 2.45)")) +
+  geom_line(data = male_whips, size = 1.2, aes(x = SV_length, 
+                                               y = mw_model_weights, 
+                                               color = "Male Whiptails NLS Fit (W = .00053 L ^ 2.34)")) 
+```
+
+Figure 2: Data visualization of male whiptail lizards length vs. weight with superimposed General NLS Fit (based on data for male and female lizards of all species, mean RMSE = `r round(mean(male_whips$general_rmse),2)`) line and Male Whips NLS FIT (based on data from male whiptails only, mean RMSE = `r round(mean(male_whips$mw_rmse),2)`) line. Based on the above errors, the fit based on male whiptails only better predicts weight as a function of length. 
+
+Data Citation:
+
+Lightfoot, D. and W.G. Whitford. 2020. Lizard pitfall trap data from 11 NPP study locations at the Jornada Basin LTER site, 1989-2006 ver 37. Environmental Data Initiative. https://doi.org/10.6073/pasta/4a6e258fb49c31e222ecbbcfd128967f
+
+
