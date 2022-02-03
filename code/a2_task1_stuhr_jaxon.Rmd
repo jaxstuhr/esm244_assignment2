@@ -24,7 +24,7 @@ library(janitor)
 
 ## Overview
 
-This document examines Florida palmetto data from the Archbold Biological Station in south-central Florida. Observations occured between 1981 and 2017. Below, releveant data is visualized and two binary logistic regression models are developed to predict the species of an observed plant based on characteristics found in the data. The model performance is compared, a superioir model is selected, and the results and predictive capacity of this model are displayed. 
+This document examines Florida palmetto data from the Archbold Biological Station in south-central Florida. Observations occurred between 1981 and 2017. Below, relevant data is visualized and two binary logistic regression models are developed to predict the species of an observed plant based on characteristics found in the data. The model performance is compared, a superior model is selected, and the results and predictive capacity of this model are displayed. 
 
 ## Data Visualization
 

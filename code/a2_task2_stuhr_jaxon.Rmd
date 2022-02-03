@@ -1,0 +1,70 @@
+---
+title: "Task 2 - Parameter Estimation with Purrr - Lizards Length to Weight"
+author: "Jaxon Stuhr"
+date: "2/1/2022"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+library(purrr)
+library(tidyverse)
+library(Metrics)
+library(cowplot)
+library(here)
+library(broom)
+```
+
+```{r}
+# read in lizard data
+lizards_raw = read_csv(here("data", "lizard.csv"))
+# add log transformations of weight and length as new columns to data
+lizards = lizards_raw %>% 
+  mutate(
+    log_weight = log(weight),
+    log_length = log(SV_length)
+  )
+```
+
+
+```{r}
+# write a function model such that (( weight = a x (snout to length) ^ b ))
+lizard_model = function(a, b, svl){
+ weight = a * (svl) ^ b
+return(weight)
+}
+```
+
+```{r}
+# Build NLS model by guessing parameters by fitting data to a log-log model
+# ln(weight) = ln(a) + b * ln(length) 
+guess_model = lm(log_weight ~ log_length, data = lizards)
+# define parameter guesses
+a_guess = exp(coefficients(guess_model)[1])
+b_guess = coefficients(guess_model)[2]
+# build NLS model
+lizards_nls_1 = nls(weight ~ lizard_model(a, b, SV_length ),
+                  data=lizards,
+                  start=list(a = a_guess, b = b_guess), 
+                  trace=TRUE)
+```
+
+
+```{r}
+# add column to lizards with modeled weights based on guessed parameters
+lizards = lizards %>% 
+  mutate(guess_weights = lizard_model(a,b,SV_length))
+```
+
+```{r}
+# Data Viz
+ggplot(lizards, aes(x = SV_length, y = weight, color = sex)) + 
+  geom_point() + 
+  labs(x = "Snout to Vent Length [mm]", y = "Weight [g]") + 
+  theme_minimal() +
+  geom_smooth(data = lizards, aes(x = SV_length, y = guess_weights))
+```
+
+Figure 1: Data visualization of lizard length vs. weight sorted by sex
